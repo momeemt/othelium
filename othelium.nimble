@@ -7,8 +7,9 @@ license       = "MIT"
 srcDir        = "src"
 installExt    = @["nim"]
 bin           = @["othelium"]
-
+binDir        = "bin"
 
 # Dependencies
 
 requires "nim >= 1.6.6"
+requires "nimx == 0.1"

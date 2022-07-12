@@ -16,11 +16,21 @@ type
     black_discs: HashSet[int]
     current_turn: PlayerTurn
 
+  AgentKind = enum
+    akRandom
+
+  Agent = object
+    kind: AgentKind
+
 func init (_: typedesc[Board]): Board =
   result = Board()
   result.white_discs = toHashSet([27, 36])
   result.black_discs = toHashSet([28, 35])
   result.current_turn = White
+
+func init (_: typedesc[Agent], kind: AgentKind): Agent =
+  result = Agent()
+  result.kind = kind
 
 func turn (board: Board): Board =
   result = board
@@ -106,14 +116,23 @@ func possiblePutList (board: Board): seq[int] =
     if board.canDrop(disc_number):
       result.add disc_number
 
-var board = Board.init()
+var
+  board = Board.init()
+  agent = Agent.init(akRandom)
+
+proc choose (agent: Agent, board: Board): Board =
+  case agent.kind
+  of akRandom:
+    result = board.drop(board.possiblePutList.sample).turn()
+
+func pass (agent: Agent, board: Board): Board =
+  result = board.turn()
 
 proc startApp() =
   var wnd = newWindow(newRect(40, 40, 419, 419))
 
   let collectionView = newCollectionView(newRect(0, 0, 419, 419), newSize(50, 50), LayoutDirection.LeftToRight)
-  collectionView.numberOfItems = proc(): int =
-    return 64
+  collectionView.numberOfItems = proc(): int = 64
   collectionView.viewForItem = proc(i: int): View =
     var button = newButton(newRect(0, 0, 100, 100))
     button.onAction(proc () =
@@ -141,9 +160,9 @@ proc startApp() =
     if board.current_turn == Black:
       let list = board.possiblePutList
       if list.len > 0:
-        board = board.drop(board.possiblePutList.sample).turn()
+        board = agent.choose(board)
       else:
-        board = board.turn()
+        board = agent.pass(board)
 
       collectionView.updateLayout()
 

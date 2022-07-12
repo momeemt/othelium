@@ -5,7 +5,7 @@ import nimx/[
   timer,
   button
 ]
-import std/[sets, os, random]
+import std/[sets, random]
 
 type
   PlayerTurn {.pure.} = enum
@@ -54,276 +54,59 @@ proc `opponentsDiscs=` (board: var Board, discs: HashSet[int]) =
   of Black: board.white_discs = discs
   of White: board.black_discs = discs
 
-func searchUpward (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  for seraching_col in countdown(col-1, 0):
-    let searching_disc_number = toDiscNumber(row, seraching_col)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
+iterator searchBoard (disc_number, dy, dx: int): int =
+  var (row, col) = disc_number.toCoord()
+  while row >= 0 and row < 8 and col >= 0 and col < 8:
+    row += dy; col += dx
+    yield toDiscNumber(row, col)
 
-proc searchDownwards (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  for seraching_col in countup(col+1, 7):
-    let searching_disc_number = toDiscNumber(row, seraching_col)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
+func product [I: static int, T] (arr1, arr2: array[I, T]): HashSet[(T, T)] =
+  for elem1 in arr1:
+    for elem2 in arr2:
+      result.incl (elem1, elem2)
 
-proc searchLeft (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  for seraching_row in countdown(row-1, 0):
-    let searching_disc_number = toDiscNumber(seraching_row, col)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
+const searching_vectors = product([0, 1, -1], [0, 1, -1]) - toHashSet([(0, 0)])
 
-proc searchRight (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  for seraching_row in countup(row+1, 7):
-    let searching_disc_number = toDiscNumber(seraching_row, col)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
-
-proc searchLowerRight (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var min_index = min(row, col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row-index, col-index)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
-
-proc searchUpperLeft (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var min_index = min(7-row, 7-col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row+index, col+index)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
-
-proc searchLowerLeft (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var min_index = min(row, 7-col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row-index, col+index)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
-
-proc searchUpperRight (board: Board, disc_number: int): bool =
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var min_index = min(7-row, col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row+index, col-index)
-    if searching_disc_number in board.opponentsDiscs:
-      passed_opponent = true
-    elif passed_opponent and searching_disc_number in board.myDiscs:
-      return true
-    else:
-      break
-
-proc canPlaceDisc (board: Board, target_disc_number: int): bool =
-  if target_disc_number in board.black_discs or target_disc_number in board.white_discs:
+proc canDrop (board: Board, disc_number: int): bool =
+  if disc_number in board.black_discs or disc_number in board.white_discs:
     return false
+  for (row, col) in searching_vectors:
+    var passed_opponent = false
+    for searching_disc_number in searchBoard(disc_number, row, col):
+      if searching_disc_number in board.opponentsDiscs:
+        passed_opponent = true
+      elif passed_opponent and searching_disc_number in board.myDiscs:
+        return true
+      else:
+        break
 
-  result = board.searchUpward(target_disc_number) or
-           board.searchDownwards(target_disc_number) or
-           board.searchLeft(target_disc_number) or
-           board.searchRight(target_disc_number) or
-           board.searchLowerRight(target_disc_number) or
-           board.searchUpperLeft(target_disc_number) or
-           board.searchLowerLeft(target_disc_number) or
-           board.searchUpperRight(target_disc_number)
-
-func putUpward (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  for disc_number in countdown(col-1, 0):
-    let searching_disc_number = toDiscNumber(row, disc_number)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putDownwards (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  for disc_number in countup(col+1, 7):
-    let searching_disc_number = toDiscNumber(row, disc_number)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putLeft (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  for disc_number in countdown(row-1, 0):
-    let searching_disc_number = toDiscNumber(disc_number, col)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putRight (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  for disc_number in countup(row+1, 7):
-    let searching_disc_number = toDiscNumber(disc_number, col)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putLowerRight (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  let min_index = min(row, col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row-index, col-index)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putUpperLeft (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  let min_index = min(7-row, 7-col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row+index, col+index)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putLowerLeft (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  let min_index = min(row, 7-col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row-index, col+index)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func putUpperRight (board: Board, disc_number: int): Board =
-  result = board
-  let (row, col) = disc_number.toCoord()
-  var passed_opponent = false
-  var addition_disc: HashSet[int]
-  let min_index =min(7-row, col)
-  for index in 1..min_index:
-    let searching_disc_number = toDiscNumber(row+index, col-index)
-    if searching_disc_number in result.opponentsDiscs:
-      passed_opponent = true
-      addition_disc.incl searching_disc_number
-    elif passed_opponent and searching_disc_number in result.myDiscs:
-      result.myDiscs = result.myDiscs + addition_disc
-      result.opponentsDiscs = result.opponentsDiscs - addition_disc
-    else:
-      break
-
-func singlePut (board: Board, disc_number: int): Board =
+func singleDrop (board: Board, disc_number: int): Board =
   result = board
   case result.current_turn
   of White: result.white_discs.incl disc_number
   of Black: result.black_discs.incl disc_number
 
-func put (board: Board, disc_number: int): Board =
-  result = board.putUpward(disc_number)
-                .putDownwards(disc_number)
-                .putLeft(disc_number)
-                .putRight(disc_number)
-                .putLowerRight(disc_number)
-                .putUpperLeft(disc_number)
-                .putLowerLeft(disc_number)
-                .putUpperRight(disc_number)
-                .singlePut(disc_number)
+func drop (board: Board, disc_number: int): Board =
+  result = board.singleDrop(disc_number)
+  for (row, col) in searching_vectors:
+    var
+      passed_opponent = false
+      addition_disc: HashSet[int]
+    for searching_disc_number in searchBoard(disc_number, row, col):
+      if searching_disc_number in result.opponentsDiscs:
+        passed_opponent = true
+        addition_disc.incl searching_disc_number
+      elif passed_opponent and searching_disc_number in result.myDiscs:
+        result.myDiscs = result.myDiscs + addition_disc
+        result.opponentsDiscs = result.opponentsDiscs - addition_disc
+      else: break
 
 func possiblePutList (board: Board): seq[int] =
   for disc_number in 0 ..< 64:
-    if board.canPlaceDisc(disc_number):
+    if board.canDrop(disc_number):
       result.add disc_number
 
-var
-  board = Board.init()
-  my_rnd = initRand(2003)
+var board = Board.init()
 
 proc startApp() =
   var wnd = newWindow(newRect(40, 40, 419, 419))
@@ -334,12 +117,12 @@ proc startApp() =
   collectionView.viewForItem = proc(i: int): View =
     var button = newButton(newRect(0, 0, 100, 100))
     button.onAction(proc () =
-      if board.canPlaceDisc(i):
-        board = board.put(i).turn()
+      if board.canDrop(i):
+        board = board.drop(i).turn()
         collectionView.updateLayout()
     )
 
-    if board.canPlaceDisc(i):
+    if board.canDrop(i):
       button.backgroundColor = newColor(0.0, 0.0, 1.0, 1.0)
     else:
       button.backgroundColor = newColor(0.0, 1.0, 0.0, 1.0)
@@ -354,19 +137,11 @@ proc startApp() =
       circle.backgroundColor = newColor(0.0, 0.0, 0.0, 0.0)
     result.addSubview(circle)
 
-  var count = 0
-  setInterval 0.1, proc() =
+  setInterval 0.75, proc() =
     if board.current_turn == Black:
-      if count < 10:
-        echo count
-        count += 1
-        return
-      echo count
-      count = 0
-      
       let list = board.possiblePutList
       if list.len > 0:
-        board = board.put(board.possiblePutList.sample).turn()
+        board = board.drop(board.possiblePutList.sample).turn()
       else:
         board = board.turn()
 

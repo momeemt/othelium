@@ -2,9 +2,10 @@ import nimx/[
   window,
   text_field,
   collection_view,
+  timer,
   button
 ]
-import std/sets
+import std/[sets, os, random]
 
 type
   PlayerTurn {.pure.} = enum
@@ -315,8 +316,14 @@ func put (board: Board, disc_number: int): Board =
                 .putUpperRight(disc_number)
                 .singlePut(disc_number)
 
+func possiblePutList (board: Board): seq[int] =
+  for disc_number in 0 ..< 64:
+    if board.canPlaceDisc(disc_number):
+      result.add disc_number
 
-var board = Board.init()
+var
+  board = Board.init()
+  my_rnd = initRand(2003)
 
 proc startApp() =
   var wnd = newWindow(newRect(40, 40, 419, 419))
@@ -331,6 +338,7 @@ proc startApp() =
         board = board.put(i).turn()
         collectionView.updateLayout()
     )
+
     if board.canPlaceDisc(i):
       button.backgroundColor = newColor(0.0, 0.0, 1.0, 1.0)
     else:
@@ -345,6 +353,25 @@ proc startApp() =
     else:
       circle.backgroundColor = newColor(0.0, 0.0, 0.0, 0.0)
     result.addSubview(circle)
+
+  var count = 0
+  setInterval 0.1, proc() =
+    if board.current_turn == Black:
+      if count < 10:
+        echo count
+        count += 1
+        return
+      echo count
+      count = 0
+      
+      let list = board.possiblePutList
+      if list.len > 0:
+        board = board.put(board.possiblePutList.sample).turn()
+      else:
+        board = board.turn()
+
+      collectionView.updateLayout()
+
   collectionView.itemSize = newSize(50, 50)
   collectionView.backgroundColor = newColor(0.0, 0.0, 0.0, 1.0)
   collectionView.updateLayout()

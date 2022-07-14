@@ -1,5 +1,5 @@
 # othelium
-A othello application.
+An othello application.
 
 ![](screenshot.png)
 

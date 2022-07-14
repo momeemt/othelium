@@ -25,8 +25,6 @@ type
 
 func init (_: typedesc[Board]): Board =
   result = Board()
-  result.white_discs = toHashSet([27, 36])
-  result.black_discs = toHashSet([28, 35])
   result.current_turn = White
 
 func init (_: typedesc[Agent], kind: AgentKind): Agent =
@@ -123,6 +121,7 @@ func possibleDropList (board: Board): seq[int] =
 var
   board = Board.init()
   agent = Agent.init(akSimpleEvaluation)
+  start_flag = false
 
 const
   disc_weight = [
@@ -135,49 +134,41 @@ const
     -0.5,  -2.0, -0.4, -0.2, -0.2, -0.4, -2.0, -0.5,
     3.0,  -0.5,  1.5,  1.5,  1.5,  1.5, -0.5,  3.0
   ]
-  lambda_value = 4.0
 
-func score (board: Board): float =
-  ## CPU基準の評価値
+func cpu_based_score (board: Board): float =
   for black_disc in board.black_discs:
     result += disc_weight[black_disc]
   for white_disc in board.white_discs:
     result -= disc_weight[white_disc]
+
+proc simpleEvaluation (board: Board, target: PlayerTurn, depth, target_depth: int): tuple[disc_number: int, score: float] =
+  if depth == target_depth:
+    result.score = board.cpu_based_score()
+    echo target, " ", result.score
+  else:
+    if target == White: result.score = Inf
+    else: result.score = -Inf
+    for disc_number in board.possibleDropList:
+      let dropped_board = board.drop(disc_number).turn()
+
+      let new_score = simpleEvaluation(dropped_board, target, depth+1, target_depth).score
+      if (target == White and min(result.score, new_score) == new_score) or (target == Black and max(result.score, new_score) == new_score):
+        result.score = new_score
+        result.disc_number = disc_number
 
 proc choose (agent: Agent, board: Board): (Board, float) =
   case agent.kind
   of akRandom:
     result = (board.drop(board.possibleDropList.sample).turn(), NaN)
   of akSimpleEvaluation:
-    var evaluated: tuple[board: Board, score: float] = (Board.init(), -Inf)
-    for disc_number in board.possibleDropList:
-      let after_1turn_board = board.drop(disc_number).turn() # CPUの着手
-      let player_count = after_1turn_board.possibleDropList.len # プレイヤーの着手可能数
-
-      let after_1turn_score = after_1turn_board.score()
-      
-      var
-        minimum_after_2turn_score = Inf
-        cpu_count = 0
-      for after_1turn_disc_number in after_1turn_board.possibleDropList:
-        let after_2turn_board = after_1turn_board.drop(after_1turn_disc_number).turn() # プレイヤーの着手        
-        let after_2turn_score = after_2turn_board.score()
-        
-        if minimum_after_2turn_score > after_2turn_score:
-          minimum_after_2turn_score = after_2turn_score
-          cpu_count = after_2turn_board.possibleDropList.len
-        
-      let score = (cpu_count - player_count).float + (minimum_after_2turn_score - after_1turn_score) * lambda_value
-      if score > evaluated.score:
-        evaluated.score = score
-        evaluated.board = after_1turn_board
-    result = evaluated
+    var evaluated = board.simpleEvaluation(board.current_turn, 0, 2)
+    result = (board.drop(evaluated.disc_number).turn(), evaluated.score)
 
 func pass (agent: Agent, board: Board): Board =
   result = board.turn()
 
 proc startApp() =
-  var wnd = newWindow(newRect(40, 40, 419, 459))
+  var wnd = newWindow(newRect(40, 40, 700, 459))
 
   var label = newLabel(newRect(15, 425, 0, 20))
   wnd.addSubview(label)
@@ -212,10 +203,10 @@ proc startApp() =
     
     if board.canDrop(i):
       let dropped_board = board.drop(i).turn()
-      if board.current_turn == White:
-        score_text.text = $(dropped_board.score().round(2) * -1)
-      else:
-        score_text.text = $dropped_board.score().round(2)
+      # if board.current_turn == White:
+      #   score_text.text = $(dropped_board.simpleEvaluation(dropped_board.current_turn, 0, 2).score.round(2) * -1)
+      # else:
+      #   score_text.text = $dropped_board.simpleEvaluation(dropped_board.current_turn, 0, 2).score.round(2)
       score_text.textColor = newColor(1.0, 1.0, 1.0, 1.0)
     result.addSubview(circle)
     result.addSubview(score_text)
@@ -225,20 +216,36 @@ proc startApp() =
   collectionView.updateLayout()
   wnd.addSubview(collectionView)
 
+
+  var start_button = newButton(newRect(450, 15, 60, 20))
+  discard newLabel(start_button, newPoint(0, 0), newSize(60, 20), "start")
+  start_button.onAction(proc () =
+    board.white_discs = toHashSet([27, 36])
+    board.black_discs = toHashSet([28, 35])
+    start_flag = true
+    collectionView.updateLayout()
+  )
+  wnd.addSubview(start_button)
+
   setInterval 1.0, proc () =
-    if board.current_turn == Black:
+    if board.current_turn == Black and start_flag:
       # agentが打つ
       var score = -Inf
       let list = board.possibleDropList
       if list.len > 0:
         (board, score) = agent.choose(board)
         label.text = "評価値: " & $(-score)
+        echo "----------------------------------------"
       else:
         board = agent.pass(board)
 
       collectionView.updateLayout()
 
       if (board.black_discs + board.white_discs).len == 64:
+        echo "finish"
+        return
+
+      if board.black_discs.len == 0 or board.white_discs.len == 0:
         echo "finish"
         return
     

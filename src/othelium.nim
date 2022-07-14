@@ -5,7 +5,7 @@ import nimx/[
   timer,
   button
 ]
-import std/[sets, random]
+import std/[sets, random, math]
 
 type
   PlayerTurn {.pure.} = enum
@@ -67,9 +67,10 @@ proc `opponentsDiscs=` (board: var Board, discs: HashSet[int]) =
 
 iterator searchBoard (disc_number, dy, dx: int): int =
   var (row, col) = disc_number.toCoord()
+  row += dy; col += dx
   while row >= 0 and row < 8 and col >= 0 and col < 8:
-    row += dy; col += dx
     yield toDiscNumber(row, col)
+    row += dy; col += dx
 
 func product [I: static int, T] (arr1, arr2: array[I, T]): HashSet[(T, T)] =
   for elem1 in arr1:
@@ -98,7 +99,7 @@ func singleDrop (board: Board, disc_number: int): Board =
   of Black: result.black_discs.incl disc_number
 
 func drop (board: Board, disc_number: int): Board =
-  result = board.singleDrop(disc_number)
+  result = board
   for (row, col) in searching_vectors:
     var
       passed_opponent = false
@@ -107,10 +108,12 @@ func drop (board: Board, disc_number: int): Board =
       if searching_disc_number in result.opponentsDiscs:
         passed_opponent = true
         addition_disc.incl searching_disc_number
-      elif passed_opponent and searching_disc_number in result.myDiscs:
+      elif passed_opponent and (searching_disc_number in result.myDiscs):
         result.myDiscs = result.myDiscs + addition_disc
         result.opponentsDiscs = result.opponentsDiscs - addition_disc
+        break
       else: break
+  result = result.singleDrop(disc_number)
 
 func possibleDropList (board: Board): seq[int] =
   for disc_number in 0 ..< 64:
@@ -123,16 +126,23 @@ var
 
 const
   disc_weight = [
-    2.0,  -0.5,  1.5,  1.5,  1.5,  1.5, -0.5,  2.0,
+    3.0,  -0.5,  1.5,  1.5,  1.5,  1.5, -0.5,  3.0,
     -0.5,  -2.0, -0.4, -0.2, -0.2, -0.4, -2.0, -0.5,
     1.5,  -0.4,  0.2,  0.2,  0.2,  0.2, -0.4,  1.5,
     1.5,  -0.2,  0.2,  0.2,  0.2,  0.2, -0.2,  1.5,
     1.5,  -0.2,  0.2,  0.2,  0.2,  0.2, -0.2,  1.5,
     1.5,  -0.4,  0.2,  0.2,  0.2,  0.2, -0.4,  1.5,
     -0.5,  -2.0, -0.4, -0.2, -0.2, -0.4, -2.0, -0.5,
-    2.0,  -0.5,  1.5,  1.5,  1.5,  1.5, -0.5,  2.0
+    3.0,  -0.5,  1.5,  1.5,  1.5,  1.5, -0.5,  3.0
   ]
-  lambda_value = 3.0
+  lambda_value = 4.0
+
+func score (board: Board): float =
+  ## CPU基準の評価値
+  for black_disc in board.black_discs:
+    result += disc_weight[black_disc]
+  for white_disc in board.white_discs:
+    result -= disc_weight[white_disc]
 
 proc choose (agent: Agent, board: Board): (Board, float) =
   case agent.kind
@@ -144,22 +154,14 @@ proc choose (agent: Agent, board: Board): (Board, float) =
       let after_1turn_board = board.drop(disc_number).turn() # CPUの着手
       let player_count = after_1turn_board.possibleDropList.len # プレイヤーの着手可能数
 
-      var after_1turn_score = 0.0
-      for black_disc in after_1turn_board.black_discs:
-        after_1turn_score += disc_weight[black_disc]
-      for white_disc in after_1turn_board.white_discs:
-        after_1turn_score -= disc_weight[white_disc]
+      let after_1turn_score = after_1turn_board.score()
       
       var
         minimum_after_2turn_score = Inf
         cpu_count = 0
       for after_1turn_disc_number in after_1turn_board.possibleDropList:
         let after_2turn_board = after_1turn_board.drop(after_1turn_disc_number).turn() # プレイヤーの着手        
-        var after_2turn_score = 0.0
-        for black_disc in after_2turn_board.black_discs:
-          after_2turn_score += disc_weight[black_disc]
-        for white_disc in after_2turn_board.white_discs:
-          after_2turn_score -= disc_weight[white_disc]
+        let after_2turn_score = after_2turn_board.score()
         
         if minimum_after_2turn_score > after_2turn_score:
           minimum_after_2turn_score = after_2turn_score
@@ -177,8 +179,7 @@ func pass (agent: Agent, board: Board): Board =
 proc startApp() =
   var wnd = newWindow(newRect(40, 40, 419, 459))
 
-  var label = newLabel(newRect(15, 425, 20, 20))
-  label.text = "評価値: "
+  var label = newLabel(newRect(15, 425, 0, 20))
   wnd.addSubview(label)
 
   let collectionView = newCollectionView(newRect(0, 0, 419, 419), newSize(50, 50), LayoutDirection.LeftToRight)
@@ -200,15 +201,24 @@ proc startApp() =
     else:
       button.backgroundColor = newColor(0.0, 1.0, 0.0, 1.0)
     result = button
-    
     var circle = newView(newRect(15, 15, 20, 20))
+    var score_text = newLabel(newRect(10, 15, 30, 20))
     if i in board.white_discs:
       circle.backgroundColor = newColor(1.0, 1.0, 1.0, 1.0)
     elif i in board.black_discs:
       circle.backgroundColor = newColor(0.0, 0.0, 0.0, 1.0)
     else:
       circle.backgroundColor = newColor(0.0, 0.0, 0.0, 0.0)
+    
+    if board.canDrop(i):
+      let dropped_board = board.drop(i).turn()
+      if board.current_turn == White:
+        score_text.text = $(dropped_board.score().round(2) * -1)
+      else:
+        score_text.text = $dropped_board.score().round(2)
+      score_text.textColor = newColor(1.0, 1.0, 1.0, 1.0)
     result.addSubview(circle)
+    result.addSubview(score_text)
 
   collectionView.itemSize = newSize(50, 50)
   collectionView.backgroundColor = newColor(0.0, 0.0, 0.0, 1.0)
@@ -222,14 +232,20 @@ proc startApp() =
       let list = board.possibleDropList
       if list.len > 0:
         (board, score) = agent.choose(board)
-        label.text = $(-score)
+        label.text = "評価値: " & $(-score)
       else:
         board = agent.pass(board)
+
+      collectionView.updateLayout()
+
+      if (board.black_discs + board.white_discs).len == 64:
+        echo "finish"
+        return
     
       while board.possibleDropList.len == 0:
         board = board.turn()
         (board, score) = agent.choose(board)
-        label.text = $(-score)
+        label.text = "評価値: " & $(-score)
 
       collectionView.updateLayout()
 
